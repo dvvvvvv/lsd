@@ -31,7 +31,7 @@ unicode-width = "0.1.*"
 lscolors = "0.6.0"
 wild = "2.0.*"
 globset = "0.4.*"
-tokio = "0.2.9"
+tokio = {version = "0.2.9", features = ["rt-core", "fs", "stream","macros"]}
 
 [target.'cfg(unix)'.dependencies]
 users = "0.9.*"
