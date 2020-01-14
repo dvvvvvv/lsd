@@ -67,14 +67,14 @@ impl Core {
         }
     }
 
-    pub fn run(self, paths: Vec<PathBuf>) {
-        let mut meta_list = self.fetch(paths);
+    pub async fn run(self, paths: Vec<PathBuf>) {
+        let mut meta_list = self.fetch(paths).await;
 
         self.sort(&mut meta_list);
         self.display(&meta_list)
     }
 
-    fn fetch(&self, paths: Vec<PathBuf>) -> Vec<Meta> {
+    async fn fetch(&self, paths: Vec<PathBuf>) -> Vec<Meta> {
         let mut meta_list = Vec::with_capacity(paths.len());
         let depth = match self.flags.layout {
             Layout::Tree { .. } => self.flags.recursion_depth,
@@ -88,7 +88,7 @@ impl Core {
                 continue;
             }
 
-            let mut meta = match Meta::from_path(&path) {
+            let mut meta = match Meta::from_path(&path).await {
                 Ok(meta) => meta,
                 Err(err) => {
                     print_error!("cannot access '{}': {}", path.display(), err);
@@ -101,7 +101,10 @@ impl Core {
                     meta_list.push(meta);
                 }
                 _ => {
-                    match meta.recurse_into(depth, self.flags.display, &self.flags.ignore_globs) {
+                    match meta
+                        .recurse_into(depth, self.flags.display, &self.flags.ignore_globs)
+                        .await
+                    {
                         Ok(content) => {
                             meta.content = content;
                             meta_list.push(meta);

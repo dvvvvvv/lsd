@@ -30,7 +30,7 @@ use std::path::PathBuf;
 
 use globset::GlobSet;
 
-use futures::{FutureExt, TryFuture, TryFutureExt};
+use futures::{Future, FutureExt, TryFutureExt};
 use tokio::fs::{metadata, read_link, symlink_metadata};
 
 #[derive(Clone, Debug)]
@@ -49,7 +49,7 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn recurse_into(
+    pub async fn recurse_into(
         &self,
         depth: usize,
         display: Display,
@@ -91,7 +91,7 @@ impl Meta {
             current_meta = self.clone();
             current_meta.name.name = ".".to_string();
 
-            parent_meta = Self::from_path(&parent_path)?;
+            parent_meta = Self::from_path(&parent_path).await?;
             parent_meta.name.name = "..".to_string();
 
             content.push(current_meta);
@@ -115,21 +115,21 @@ impl Meta {
                 }
             }
 
-            let mut entry_meta = match Self::from_path(&path) {
+            let mut entry_meta = match Self::from_path(&path).await {
                 Ok(res) => res,
                 Err(err) => {
                     print_error!("cannot access '{}': {}", path.display(), err);
                     continue;
                 }
             };
-
-            match entry_meta.recurse_into(depth - 1, display, ignore_globs) {
-                Ok(content) => entry_meta.content = content,
-                Err(err) => {
-                    print_error!("cannot access '{}': {}", path.display(), err);
-                    continue;
-                }
-            };
+            //TODO: remove recursion
+            // match entry_meta.recurse_into(depth - 1, display, ignore_globs).await {
+            //     Ok(content) => entry_meta.content = content,
+            //     Err(err) => {
+            //         print_error!("cannot access '{}': {}", path.display(), err);
+            //         continue;
+            //     }
+            // };
 
             content.push(entry_meta);
         }
@@ -137,7 +137,7 @@ impl Meta {
         Ok(Some(content))
     }
 
-    pub fn calculate_total_size(&mut self) {
+    pub async fn calculate_total_size(&mut self) {
         if let FileType::Directory { .. } = self.file_type {
             if let Some(metas) = &mut self.content {
                 let mut size_accumulated = self.size.get_bytes();
@@ -148,20 +148,14 @@ impl Meta {
                 self.size = Size::new(size_accumulated);
             } else {
                 // possibility that 'depth' limited the recursion in 'recurse_into'
-                self.size = Size::new(Meta::calculate_total_file_size(&self.path));
+                self.size = Size::new(Meta::calculate_total_file_size(&self.path).await);
             }
         }
     }
 
-    fn calculate_total_file_size(path: &PathBuf) -> u64 {
-        let metadata = if read_link(&path).is_ok() {
-            // If the file is a link, retrieve the metadata without following
-            // the link.
-            path.symlink_metadata()
-        } else {
-            path.metadata()
-        };
-        let metadata = match metadata {
+    async fn calculate_total_file_size(path: &PathBuf) -> u64 {
+        let metadata = read_link(path).then(|sym_path| Self::read_metadata(path, sym_path));
+        let metadata = match metadata.await {
             Ok(meta) => meta,
             Err(err) => {
                 print_error!("cannot access '{}': {}", path.display(), err);
@@ -189,7 +183,8 @@ impl Meta {
                         continue;
                     }
                 };
-                size += Meta::calculate_total_file_size(&path);
+                //TODO: remove recursion
+                //size += Meta::calculate_total_file_size(&path).await;
             }
             size
         } else {
@@ -199,20 +194,20 @@ impl Meta {
 
     pub fn from_path<'a>(
         path: &'a PathBuf,
-    ) -> impl TryFuture<Ok = Self, Error = std::io::Error> + 'a {
+    ) -> impl Future<Output = Result<Self, std::io::Error>> + 'a {
         read_link(path)
-            .then(|sym_path| Self::read_metadata(path, sym_path))
-            .map_ok(|metadata| Self::from_metadata(path, metadata))
+            .then(move |sym_path| Self::read_metadata(path, sym_path))
+            .map_ok(move |metadata| Self::from_metadata(path, metadata))
     }
 
-    async fn read_metadata(
-        path: &PathBuf,
+    fn read_metadata<'a>(
+        path: &'a PathBuf,
         link: Result<PathBuf, std::io::Error>,
-    ) -> Result<std::fs::Metadata, std::io::Error> {
+    ) -> impl Future<Output = Result<std::fs::Metadata, std::io::Error>> + 'a {
         if link.is_ok() {
-            symlink_metadata(path).await
+            symlink_metadata(path).left_future()
         } else {
-            metadata(path).await
+            metadata(path).right_future()
         }
     }
 

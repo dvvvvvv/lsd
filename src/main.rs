@@ -61,7 +61,8 @@ macro_rules! print_output {
     };
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = app::build().get_matches_from(wild::args_os());
 
     let inputs = matches
@@ -73,5 +74,5 @@ fn main() {
     let flags = Flags::from_matches(&matches).unwrap_or_else(|err| err.exit());
     let core = Core::new(flags);
 
-    core.run(inputs);
+    core.run(inputs).await;
 }
