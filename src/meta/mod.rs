@@ -25,11 +25,13 @@ pub use crate::icon::Icons;
 use crate::print_error;
 
 use std::fs;
-use std::fs::read_link;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 use globset::GlobSet;
+
+use futures::{FutureExt, TryFuture, TryFutureExt};
+use tokio::fs::{metadata, read_link, symlink_metadata};
 
 #[derive(Clone, Debug)]
 pub struct Meta {
@@ -195,15 +197,26 @@ impl Meta {
         }
     }
 
-    pub fn from_path(path: &PathBuf) -> Result<Self, std::io::Error> {
-        let metadata = if read_link(path).is_ok() {
-            // If the file is a link, retrieve the metadata without following
-            // the link.
-            path.symlink_metadata()?
-        } else {
-            path.metadata()?
-        };
+    pub fn from_path<'a>(
+        path: &'a PathBuf,
+    ) -> impl TryFuture<Ok = Self, Error = std::io::Error> + 'a {
+        read_link(path)
+            .then(|sym_path| Self::read_metadata(path, sym_path))
+            .map_ok(|metadata| Self::from_metadata(path, metadata))
+    }
 
+    async fn read_metadata(
+        path: &PathBuf,
+        link: Result<PathBuf, std::io::Error>,
+    ) -> Result<std::fs::Metadata, std::io::Error> {
+        if link.is_ok() {
+            symlink_metadata(path).await
+        } else {
+            metadata(path).await
+        }
+    }
+
+    fn from_metadata(path: &PathBuf, metadata: std::fs::Metadata) -> Self {
         #[cfg(unix)]
         let owner = Owner::from(&metadata);
         #[cfg(unix)]
@@ -216,7 +229,7 @@ impl Meta {
         let name = Name::new(&path, file_type);
         let inode = INode::from(&metadata);
 
-        Ok(Self {
+        Self {
             inode,
             path: path.to_path_buf(),
             symlink: SymLink::from(path.as_path()),
@@ -228,6 +241,6 @@ impl Meta {
             name,
             file_type,
             content: None,
-        })
+        }
     }
 }
