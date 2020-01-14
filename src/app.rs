@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::{crate_description, crate_version, App, Arg};
 
 pub fn build() -> App<'static, 'static> {
     App::new("lsd")
