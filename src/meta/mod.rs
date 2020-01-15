@@ -24,14 +24,14 @@ pub use crate::flags::Display;
 pub use crate::icon::Icons;
 use crate::print_error;
 
-use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 use globset::GlobSet;
 
-use futures::{Future, FutureExt, TryFutureExt};
-use tokio::fs::{metadata, read_link, symlink_metadata};
+use futures::future::{self, Future, FutureExt, TryFutureExt, BoxFuture};
+use futures::stream::StreamExt;
+use tokio::fs::{canonicalize, metadata, read_link, symlink_metadata, read_dir, DirEntry};
 
 #[derive(Clone, Debug)]
 pub struct Meta {
@@ -49,92 +49,90 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub async fn recurse_into(
-        &self,
+    pub fn recurse_into<'a:'b, 'b>(
+        &'a self,
         depth: usize,
         display: Display,
-        ignore_globs: &GlobSet,
-    ) -> Result<Option<Vec<Meta>>, std::io::Error> {
+        ignore_globs: &'b GlobSet,
+    ) -> BoxFuture<'b, Result<Option<Vec<Meta>>, std::io::Error>> {
         if depth == 0 {
-            return Ok(None);
+            return future::ready(Ok(None)).boxed();
         }
 
         if display == Display::DisplayDirectoryItself {
-            return Ok(None);
+            return future::ready(Ok(None)).boxed();
         }
 
         match self.file_type {
             FileType::Directory { .. } => (),
-            _ => return Ok(None),
+            _ => return future::ready(Ok(None)).boxed(),
         }
 
-        let entries = match self.path.read_dir() {
-            Ok(entries) => entries,
-            Err(err) => {
-                print_error!("cannot access '{}': {}", self.path.display(), err);
-                return Ok(None);
-            }
-        };
-
-        let mut content: Vec<Meta> = Vec::new();
-
-        if let Display::DisplayAll = display {
-            let mut current_meta;
-            let mut parent_meta;
-
-            let absolute_path = fs::canonicalize(&self.path)?;
-            let parent_path = match absolute_path.parent() {
-                None => PathBuf::from("/"),
-                Some(path) => PathBuf::from(path),
-            };
-
-            current_meta = self.clone();
-            current_meta.name.name = ".".to_string();
-
-            parent_meta = Self::from_path(&parent_path).await?;
-            parent_meta.name.name = "..".to_string();
-
-            content.push(current_meta);
-            content.push(parent_meta);
-        }
-
-        for entry in entries {
-            let path = entry?.path();
-
-            let name = path
-                .file_name()
-                .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid file name"))?;
-
-            if ignore_globs.is_match(&name) {
-                continue;
-            }
-
-            if let Display::DisplayOnlyVisible = display {
-                if name.to_string_lossy().starts_with('.') {
-                    continue;
-                }
-            }
-
-            let mut entry_meta = match Self::from_path(&path).await {
-                Ok(res) => res,
+        async move {
+            let entries = match read_dir(&self.path).await {
+                Ok(entries) => entries,
                 Err(err) => {
-                    print_error!("cannot access '{}': {}", path.display(), err);
-                    continue;
+                    print_error!("cannot access '{}': {}", self.path.display(), err);
+                    return Ok(None);
                 }
             };
-            //TODO: remove recursion
-            // match entry_meta.recurse_into(depth - 1, display, ignore_globs).await {
-            //     Ok(content) => entry_meta.content = content,
-            //     Err(err) => {
-            //         print_error!("cannot access '{}': {}", path.display(), err);
-            //         continue;
-            //     }
-            // };
+            let mut content: Vec<Meta> = Vec::new();
 
-            content.push(entry_meta);
-        }
+            if let Display::DisplayAll = display {
+                let mut current_meta;
+                let mut parent_meta;
 
-        Ok(Some(content))
+                let absolute_path = canonicalize(&self.path).await?;
+                let parent_path = match absolute_path.parent() {
+                    None => PathBuf::from("/"),
+                    Some(path) => PathBuf::from(path),
+                };
+
+                current_meta = self.clone();
+                current_meta.name.name = ".".to_string();
+
+                parent_meta = Self::from_path(&parent_path).await?;
+                parent_meta.name.name = "..".to_string();
+
+                content.push(current_meta);
+                content.push(parent_meta);
+            }
+            for entry in entries.collect::<Vec<Result<DirEntry,std::io::Error>>>().await {
+                let path = entry?.path();
+
+                let name = path
+                    .file_name()
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid file name"))?;
+
+                if ignore_globs.is_match(&name) {
+                    continue;
+                }
+
+                if let Display::DisplayOnlyVisible = display {
+                    if name.to_string_lossy().starts_with('.') {
+                        continue;
+                    }
+                }
+
+                let mut entry_meta = match Self::from_path(&path).await {
+                    Ok(res) => res,
+                    Err(err) => {
+                        print_error!("cannot access '{}': {}", path.display(), err);
+                        continue;
+                    }
+                };
+                match entry_meta.recurse_into(depth - 1, display, ignore_globs).await {
+                    Ok(content) => entry_meta.content = content,
+                    Err(err) => {
+                        print_error!("cannot access '{}': {}", path.display(), err);
+                        continue;
+                    }
+                };
+
+                content.push(entry_meta);
+            }
+            Ok(Some(content))
+        }.boxed()
     }
 
     pub async fn calculate_total_size(&mut self) {
