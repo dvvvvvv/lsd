@@ -119,7 +119,7 @@ impl Core {
         }
         if self.flags.total_size {
             for meta in &mut meta_list.iter_mut() {
-                meta.calculate_total_size();
+                meta.calculate_total_size().await;
             }
         }
 

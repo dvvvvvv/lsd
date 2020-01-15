@@ -142,20 +142,23 @@ impl Meta {
         .boxed()
     }
 
-    pub async fn calculate_total_size(&mut self) {
-        if let FileType::Directory { .. } = self.file_type {
-            if let Some(metas) = &mut self.content {
-                let mut size_accumulated = self.size.get_bytes();
-                for x in &mut metas.iter_mut() {
-                    x.calculate_total_size();
-                    size_accumulated += x.size.get_bytes();
+    pub fn calculate_total_size<'a>(&'a mut self) -> BoxFuture<'a, ()>{
+        async move {
+            if let FileType::Directory { .. } = self.file_type {
+                if let Some(metas) = &mut self.content {
+                    let mut size_accumulated = self.size.get_bytes();
+                    for x in &mut metas.iter_mut() {
+                        x.calculate_total_size().await;
+                        size_accumulated += x.size.get_bytes();
+                    }
+                    self.size = Size::new(size_accumulated);
+                } else {
+                    // possibility that 'depth' limited the recursion in 'recurse_into'
+                    self.size = Size::new(Meta::calculate_total_file_size(&self.path).await);
                 }
-                self.size = Size::new(size_accumulated);
-            } else {
-                // possibility that 'depth' limited the recursion in 'recurse_into'
-                self.size = Size::new(Meta::calculate_total_file_size(&self.path).await);
             }
         }
+        .boxed()
     }
 
     fn calculate_total_file_size<'a>(path: &'a PathBuf) -> BoxFuture<'a, u64> {
