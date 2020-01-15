@@ -1,6 +1,6 @@
 use crate::color::{ColoredString, Colors, Elem};
 use ansi_term::{ANSIString, ANSIStrings};
-use std::fs::read_link;
+use tokio::fs::read_link;
 use std::path::Path;
 
 #[derive(Clone, Debug)]
@@ -9,9 +9,9 @@ pub struct SymLink {
     valid: bool,
 }
 
-impl<'a> From<&'a Path> for SymLink {
-    fn from(path: &'a Path) -> Self {
-        if let Ok(target) = read_link(path) {
+impl SymLink {
+    pub async fn from_path<'a>(path: &'a Path) -> Self {
+        if let Ok(target) = read_link(path).await {
             if target.is_absolute() || path.parent() == None {
                 return Self {
                     valid: target.exists(),
@@ -39,10 +39,9 @@ impl<'a> From<&'a Path> for SymLink {
             target: None,
             valid: false,
         }
-    }
-}
 
-impl SymLink {
+    }
+
     pub fn symlink_string(&self) -> Option<String> {
         if let Some(ref target) = self.target {
             Some(target.to_string())

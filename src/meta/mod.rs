@@ -202,12 +202,12 @@ impl Meta {
         .boxed()
     }
 
-    pub fn from_path<'a>(
+    pub async fn from_path<'a>(
         path: &'a PathBuf,
-    ) -> impl Future<Output = Result<Self, std::io::Error>> + 'a {
-        read_link(path)
-            .then(move |sym_path| Self::read_metadata(path, sym_path))
-            .map_ok(move |metadata| Self::from_metadata(path, metadata))
+    ) -> Result<Self, std::io::Error> {
+        let symlink = read_link(path).await;
+        let meta = Self::read_metadata(path, symlink).await;
+        Ok(Self::from_metadata(path, meta?).await)
     }
 
     fn read_metadata<'a>(
@@ -221,7 +221,7 @@ impl Meta {
         }
     }
 
-    fn from_metadata(path: &PathBuf, metadata: std::fs::Metadata) -> Self {
+    async fn from_metadata(path: &PathBuf, metadata: std::fs::Metadata) -> Self {
         #[cfg(unix)]
         let owner = Owner::from(&metadata);
         #[cfg(unix)]
@@ -237,7 +237,7 @@ impl Meta {
         Self {
             inode,
             path: path.to_path_buf(),
-            symlink: SymLink::from(path.as_path()),
+            symlink: SymLink::from_path(path.as_path()).await,
             size: Size::from(&metadata),
             date: Date::from(&metadata),
             indicator: Indicator::from(file_type),
