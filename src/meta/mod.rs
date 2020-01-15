@@ -29,9 +29,9 @@ use std::path::PathBuf;
 
 use globset::GlobSet;
 
-use futures::future::{self, Future, FutureExt, TryFutureExt, BoxFuture};
+use futures::future::{self, BoxFuture, Future, FutureExt, TryFutureExt};
 use futures::stream::StreamExt;
-use tokio::fs::{canonicalize, metadata, read_link, symlink_metadata, read_dir, DirEntry};
+use tokio::fs::{canonicalize, metadata, read_dir, read_link, symlink_metadata, DirEntry};
 
 #[derive(Clone, Debug)]
 pub struct Meta {
@@ -49,7 +49,7 @@ pub struct Meta {
 }
 
 impl Meta {
-    pub fn recurse_into<'a:'b, 'b>(
+    pub fn recurse_into<'a: 'b, 'b>(
         &'a self,
         depth: usize,
         display: Display,
@@ -97,7 +97,10 @@ impl Meta {
                 content.push(current_meta);
                 content.push(parent_meta);
             }
-            for entry in entries.collect::<Vec<Result<DirEntry,std::io::Error>>>().await {
+            for entry in entries
+                .collect::<Vec<Result<DirEntry, std::io::Error>>>()
+                .await
+            {
                 let path = entry?.path();
 
                 let name = path
@@ -121,7 +124,10 @@ impl Meta {
                         continue;
                     }
                 };
-                match entry_meta.recurse_into(depth - 1, display, ignore_globs).await {
+                match entry_meta
+                    .recurse_into(depth - 1, display, ignore_globs)
+                    .await
+                {
                     Ok(content) => entry_meta.content = content,
                     Err(err) => {
                         print_error!("cannot access '{}': {}", path.display(), err);
@@ -132,7 +138,8 @@ impl Meta {
                 content.push(entry_meta);
             }
             Ok(Some(content))
-        }.boxed()
+        }
+        .boxed()
     }
 
     pub async fn calculate_total_size(&mut self) {
@@ -151,43 +158,45 @@ impl Meta {
         }
     }
 
-    async fn calculate_total_file_size(path: &PathBuf) -> u64 {
-        let metadata = read_link(path).then(|sym_path| Self::read_metadata(path, sym_path));
-        let metadata = match metadata.await {
-            Ok(meta) => meta,
-            Err(err) => {
-                print_error!("cannot access '{}': {}", path.display(), err);
-                return 0;
-            }
-        };
-        let file_type = metadata.file_type();
-        if file_type.is_file() {
-            metadata.len()
-        } else if file_type.is_dir() {
-            let mut size = metadata.len();
-
-            let entries = match path.read_dir() {
-                Ok(entries) => entries,
+    fn calculate_total_file_size<'a>(path: &'a PathBuf) -> BoxFuture<'a, u64> {
+        async move {
+            let metadata = read_link(path).then(|sym_path| Self::read_metadata(path, sym_path));
+            let metadata = match metadata.await {
+                Ok(meta) => meta,
                 Err(err) => {
                     print_error!("cannot access '{}': {}", path.display(), err);
-                    return size;
+                    return 0;
                 }
             };
-            for entry in entries {
-                let path = match entry {
-                    Ok(entry) => entry.path(),
+            let file_type = metadata.file_type();
+            if file_type.is_file() {
+                metadata.len()
+            } else if file_type.is_dir() {
+                let mut size = metadata.len();
+
+                let entries = match path.read_dir() {
+                    Ok(entries) => entries,
                     Err(err) => {
                         print_error!("cannot access '{}': {}", path.display(), err);
-                        continue;
+                        return size;
                     }
                 };
-                //TODO: remove recursion
-                //size += Meta::calculate_total_file_size(&path).await;
+                for entry in entries {
+                    let path = match entry {
+                        Ok(entry) => entry.path(),
+                        Err(err) => {
+                            print_error!("cannot access '{}': {}", path.display(), err);
+                            continue;
+                        }
+                    };
+                    size += Meta::calculate_total_file_size(&path).await;
+                }
+                size
+            } else {
+                0
             }
-            size
-        } else {
-            0
         }
+        .boxed()
     }
 
     pub fn from_path<'a>(
