@@ -83,12 +83,6 @@ impl Core {
         };
 
         for path in paths {
-            let base_path = if path.is_file() {
-                path.parent().unwrap_or(&path)
-            } else {
-                &path
-            };
-
             if let Err(err) = fs::canonicalize(&path) {
                 print_error!("cannot access '{}': {}", path.display(), err);
                 continue;
@@ -107,12 +101,7 @@ impl Core {
                     meta_list.push(meta);
                 }
                 _ => {
-                    match meta.recurse_into(
-                        base_path,
-                        depth,
-                        self.flags.display,
-                        &self.flags.ignore_globs,
-                    ) {
+                    match meta.recurse_into(depth, self.flags.display, &self.flags.ignore_globs) {
                         Ok(content) => {
                             meta.content = content;
                             meta_list.push(meta);
