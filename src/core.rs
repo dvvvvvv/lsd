@@ -4,7 +4,6 @@ use crate::flags::{Display, Flags, IconTheme, Layout, WhenFlag};
 use crate::icon::{self, Icons};
 use crate::meta::Meta;
 use crate::{print_error, print_output, sort};
-use std::fs;
 use std::path::PathBuf;
 
 #[cfg(not(target_os = "windows"))]
@@ -83,15 +82,10 @@ impl Core {
         };
 
         for path in paths {
-            if let Err(err) = fs::canonicalize(&path) {
-                print_error!("cannot access '{}': {}", path.display(), err);
-                continue;
-            }
-
             let mut meta = match Meta::from_path(&path) {
                 Ok(meta) => meta,
                 Err(err) => {
-                    print_error!("cannot access '{}': {}", path.display(), err);
+                    print_error!("lsd: {}: {}\n", path.display(), err);
                     continue;
                 }
             };
@@ -107,7 +101,7 @@ impl Core {
                             meta_list.push(meta);
                         }
                         Err(err) => {
-                            print_error!("cannot access '{}': {}", path.display(), err);
+                            print_error!("lsd: {}: {}\n", path.display(), err);
                             continue;
                         }
                     };
