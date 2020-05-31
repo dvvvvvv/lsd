@@ -88,7 +88,11 @@ impl Core {
         };
 
         for path in paths {
-            let mut meta = match Meta::from_path(&mut self.owner_cache, &path) {
+            let mut meta = match Meta::from_path(
+                #[cfg(unix)]
+                &mut self.owner_cache,
+                &path,
+            ) {
                 Ok(meta) => meta,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
@@ -105,6 +109,7 @@ impl Core {
                         depth,
                         self.flags.display,
                         &self.flags.ignore_globs,
+                        #[cfg(unix)]
                         &mut self.owner_cache,
                     ) {
                         Ok(content) => {

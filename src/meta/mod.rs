@@ -84,7 +84,11 @@ impl Meta {
             current_meta = self.clone();
             current_meta.name.name = ".".to_owned();
 
-            let parent_meta = Self::from_path(owner_cache, &self.path.join(Component::ParentDir))?;
+            let parent_meta = Self::from_path(
+                #[cfg(unix)]
+                owner_cache,
+                &self.path.join(Component::ParentDir),
+            )?;
 
             content.push(current_meta);
             content.push(parent_meta);
@@ -107,7 +111,11 @@ impl Meta {
                 }
             }
 
-            let mut entry_meta = match Self::from_path(owner_cache, &path) {
+            let mut entry_meta = match Self::from_path(
+                #[cfg(unix)]
+                owner_cache,
+                &path,
+            ) {
                 Ok(res) => res,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
@@ -115,7 +123,13 @@ impl Meta {
                 }
             };
 
-            match entry_meta.recurse_into(depth - 1, display, ignore_globs, owner_cache) {
+            match entry_meta.recurse_into(
+                depth - 1,
+                display,
+                ignore_globs,
+                #[cfg(unix)]
+                owner_cache,
+            ) {
                 Ok(content) => entry_meta.content = content,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
