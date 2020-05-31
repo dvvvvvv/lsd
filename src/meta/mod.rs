@@ -53,7 +53,7 @@ impl Meta {
         depth: usize,
         display: Display,
         ignore_globs: &GlobSet,
-        owner_cache: &mut OwnerCache,
+        #[cfg(unix)] owner_cache: &mut OwnerCache,
     ) -> Result<Option<Vec<Meta>>, std::io::Error> {
         if depth == 0 {
             return Ok(None);
@@ -189,7 +189,10 @@ impl Meta {
         }
     }
 
-    pub fn from_path(owner_cache: &mut OwnerCache, path: &Path) -> Result<Self, std::io::Error> {
+    pub fn from_path(
+        #[cfg(unix)] owner_cache: &mut OwnerCache,
+        path: &Path,
+    ) -> Result<Self, std::io::Error> {
         let metadata = if read_link(path).is_ok() {
             // If the file is a link, retrieve the metadata without following
             // the link.

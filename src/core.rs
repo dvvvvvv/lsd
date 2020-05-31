@@ -21,6 +21,7 @@ pub struct Core {
     icons: Icons,
     //display: Display,
     colors: Colors,
+    #[cfg(unix)]
     owner_cache: OwnerCache,
 }
 
@@ -66,6 +67,7 @@ impl Core {
             //display: Display::new(inner_flags),
             colors: Colors::new(color_theme),
             icons: Icons::new(icon_theme),
+            #[cfg(unix)]
             owner_cache: OwnerCache::default(),
         }
     }
