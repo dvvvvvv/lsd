@@ -1,4 +1,5 @@
 use crate::color::{ColoredString, Colors, Elem};
+use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::fs::Metadata;
 
@@ -42,5 +43,47 @@ impl Owner {
 
     pub fn render_group(&self, colors: &Colors) -> ColoredString {
         colors.colorize(self.group.clone(), &Elem::Group)
+    }
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+pub struct OwnerCache {
+    user_cache: BTreeMap<u32, String>,
+    group_cache: BTreeMap<u32, String>,
+}
+
+#[cfg(unix)]
+impl OwnerCache {
+    pub fn get_by_uid_and_gid(&mut self, uid: u32, gid: u32) -> Owner {
+        Owner {
+            user: self.get_user(uid).clone(),
+            group: self.get_group(gid).clone(),
+        }
+    }
+
+    pub fn get_by_metadata(&mut self, meta: &Metadata) -> Owner {
+        use std::os::unix::fs::MetadataExt;
+        self.get_by_uid_and_gid(meta.uid(), meta.gid())
+    }
+
+    fn get_user(&mut self, uid: u32) -> &mut String {
+        use users::get_user_by_uid;
+        self.user_cache
+            .entry(uid)
+            .or_insert_with(|| match get_user_by_uid(uid) {
+                Some(res) => res.name().to_string_lossy().to_string(),
+                None => uid.to_string(),
+            })
+    }
+
+    fn get_group(&mut self, gid: u32) -> &mut String {
+        use users::get_group_by_gid;
+        self.group_cache
+            .entry(gid)
+            .or_insert_with(|| match get_group_by_gid(gid) {
+                Some(res) => res.name().to_string_lossy().to_string(),
+                None => gid.to_string(),
+            })
     }
 }
