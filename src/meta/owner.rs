@@ -1,4 +1,5 @@
 use crate::color::{ColoredString, Colors, Elem};
+#[cfg(unix)]
 use std::collections::BTreeMap;
 #[cfg(unix)]
 use std::fs::Metadata;

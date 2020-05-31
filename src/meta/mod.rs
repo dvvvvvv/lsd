@@ -23,6 +23,7 @@ pub use self::symlink::SymLink;
 pub use crate::flags::Display;
 pub use crate::icon::Icons;
 use crate::print_error;
+#[cfg(unix)]
 use owner::OwnerCache;
 
 use std::fs::read_link;

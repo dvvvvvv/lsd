@@ -2,6 +2,7 @@ use crate::color::{self, Colors};
 use crate::display;
 use crate::flags::{Display, Flags, IconTheme, Layout, WhenFlag};
 use crate::icon::{self, Icons};
+#[cfg(unix)]
 use crate::meta::owner::OwnerCache;
 use crate::meta::Meta;
 use crate::{print_error, print_output, sort};
