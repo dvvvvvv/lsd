@@ -3,7 +3,7 @@ mod filetype;
 mod indicator;
 mod inode;
 pub mod name;
-mod owner;
+pub mod owner;
 mod permissions;
 mod size;
 mod symlink;
@@ -23,6 +23,7 @@ pub use self::symlink::SymLink;
 pub use crate::flags::Display;
 pub use crate::icon::Icons;
 use crate::print_error;
+use owner::OwnerCache;
 
 use std::fs::read_link;
 use std::io::{Error, ErrorKind};
@@ -51,6 +52,7 @@ impl Meta {
         depth: usize,
         display: Display,
         ignore_globs: &GlobSet,
+        owner_cache: &mut OwnerCache,
     ) -> Result<Option<Vec<Meta>>, std::io::Error> {
         if depth == 0 {
             return Ok(None);
@@ -81,7 +83,7 @@ impl Meta {
             current_meta = self.clone();
             current_meta.name.name = ".".to_owned();
 
-            let parent_meta = Self::from_path(&self.path.join(Component::ParentDir))?;
+            let parent_meta = Self::from_path(owner_cache, &self.path.join(Component::ParentDir))?;
 
             content.push(current_meta);
             content.push(parent_meta);
@@ -104,7 +106,7 @@ impl Meta {
                 }
             }
 
-            let mut entry_meta = match Self::from_path(&path) {
+            let mut entry_meta = match Self::from_path(owner_cache, &path) {
                 Ok(res) => res,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
@@ -112,7 +114,7 @@ impl Meta {
                 }
             };
 
-            match entry_meta.recurse_into(depth - 1, display, ignore_globs) {
+            match entry_meta.recurse_into(depth - 1, display, ignore_globs, owner_cache) {
                 Ok(content) => entry_meta.content = content,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
@@ -186,7 +188,7 @@ impl Meta {
         }
     }
 
-    pub fn from_path(path: &Path) -> Result<Self, std::io::Error> {
+    pub fn from_path(owner_cache: &mut OwnerCache, path: &Path) -> Result<Self, std::io::Error> {
         let metadata = if read_link(path).is_ok() {
             // If the file is a link, retrieve the metadata without following
             // the link.
@@ -196,7 +198,7 @@ impl Meta {
         };
 
         #[cfg(unix)]
-        let owner = Owner::from(&metadata);
+        let owner = owner_cache.get_by_metadata(&metadata);
         #[cfg(unix)]
         let permissions = Permissions::from(&metadata);
 

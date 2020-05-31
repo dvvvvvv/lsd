@@ -2,6 +2,7 @@ use crate::color::{self, Colors};
 use crate::display;
 use crate::flags::{Display, Flags, IconTheme, Layout, WhenFlag};
 use crate::icon::{self, Icons};
+use crate::meta::owner::OwnerCache;
 use crate::meta::Meta;
 use crate::{print_error, print_output, sort};
 use std::path::PathBuf;
@@ -19,6 +20,7 @@ pub struct Core {
     icons: Icons,
     //display: Display,
     colors: Colors,
+    owner_cache: OwnerCache,
 }
 
 impl Core {
@@ -63,17 +65,18 @@ impl Core {
             //display: Display::new(inner_flags),
             colors: Colors::new(color_theme),
             icons: Icons::new(icon_theme),
+            owner_cache: OwnerCache::default(),
         }
     }
 
-    pub fn run(self, paths: Vec<PathBuf>) {
+    pub fn run(mut self, paths: Vec<PathBuf>) {
         let mut meta_list = self.fetch(paths);
 
         self.sort(&mut meta_list);
         self.display(&meta_list)
     }
 
-    fn fetch(&self, paths: Vec<PathBuf>) -> Vec<Meta> {
+    fn fetch(&mut self, paths: Vec<PathBuf>) -> Vec<Meta> {
         let mut meta_list = Vec::with_capacity(paths.len());
         let depth = match self.flags.layout {
             Layout::Tree { .. } => self.flags.recursion_depth,
@@ -82,7 +85,7 @@ impl Core {
         };
 
         for path in paths {
-            let mut meta = match Meta::from_path(&path) {
+            let mut meta = match Meta::from_path(&mut self.owner_cache, &path) {
                 Ok(meta) => meta,
                 Err(err) => {
                     print_error!("lsd: {}: {}\n", path.display(), err);
@@ -95,7 +98,12 @@ impl Core {
                     meta_list.push(meta);
                 }
                 _ => {
-                    match meta.recurse_into(depth, self.flags.display, &self.flags.ignore_globs) {
+                    match meta.recurse_into(
+                        depth,
+                        self.flags.display,
+                        &self.flags.ignore_globs,
+                        &mut self.owner_cache,
+                    ) {
                         Ok(content) => {
                             meta.content = content;
                             meta_list.push(meta);
